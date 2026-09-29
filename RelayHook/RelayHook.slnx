@@ -4,6 +4,7 @@
     <Project Path="src/RelayHook.Authentication/RelayHook.Authentication.csproj" />
     <Project Path="src/RelayHook.SqlServer/RelayHook.SqlServer.csproj" />
     <Project Path="src/RelayHook.AspNetCore/RelayHook.AspNetCore.csproj" />
+    <Project Path="src/RelayHook/RelayHook.csproj" Id="7454980b-c67d-4bae-85b4-5ef723b6515b" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RelayHook.Core.Tests/RelayHook.Core.Tests.csproj" />

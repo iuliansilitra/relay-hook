@@ -1,24 +1,46 @@
-# RelayHook
+<p align="center">
+  <img src="logo.png" width="140" alt="RelayHook logo" />
+</p>
 
-RelayHook provides reliable, persistent, at-least-once outbound callback/webhook delivery for ASP.NET Core applications backed by SQL Server.
+<h1 align="center">RelayHook</h1>
 
-Applications enqueue callbacks into their own database. A bounded hosted worker delivers them with retries, authentication, crash recovery, health checks, logs, traces, and metrics. RelayHook is an embedded library, not a central webhook service.
+<p align="center">
+  Reliable outbound webhooks for ASP.NET Core, backed by SQL Server.
+</p>
 
-> RelayHook provides **at-least-once delivery**. A receiver can observe the same callback more than once after some crash or network-failure sequences. Receivers must deduplicate by callback ID or idempotency key.
+RelayHook is a .NET library for applications that need to send HTTP callbacks reliably.
+
+Instead of sending a webhook directly and hoping the request succeeds, RelayHook stores it in your application's SQL Server database and delivers it in the background. Failed deliveries can be retried automatically, and queued callbacks survive application restarts.
+
+There is no separate RelayHook service to deploy and no message broker required.
+
+## Features
+
+- Persistent callback queue backed by SQL Server
+- Background delivery using an ASP.NET Core hosted service
+- Automatic retries with jitter and `Retry-After` support
+- Crash recovery using renewable leases
+- Safe execution across multiple application instances
+- API Key, Basic, Bearer, JWT and OAuth2 Client Credentials authentication
+- Transactional enqueue using an existing `SqlConnection` and `SqlTransaction`
+- Stable callback and idempotency identifiers across retries
+- Health checks, structured logging, metrics and tracing
+- Bounded payload and response storage
+- HTTPS and destination security checks by default
 
 ## Installation
 
-For a standard ASP.NET Core application using SQL Server, install one package:
+For the standard ASP.NET Core + SQL Server setup:
 
 ```bash
-dotnet add package RelayHook.AspNetCore
+dotnet add package RelayHook
 ```
 
-`RelayHook.AspNetCore` depends on `RelayHook.Core`, `RelayHook.Authentication`, and `RelayHook.SqlServer`. Install those lower-level packages directly only when building custom composition or infrastructure.
+RelayHook targets **.NET 10**.
 
-RelayHook targets .NET 10.
+The individual `RelayHook.Core`, `RelayHook.Authentication`, `RelayHook.SqlServer` and `RelayHook.AspNetCore` packages are also available if you need a custom composition.
 
-## Five-minute quick start
+## Quick start
 
 Add a SQL Server connection string:
 
@@ -30,7 +52,7 @@ Add a SQL Server connection string:
 }
 ```
 
-Register RelayHook and one callback client in `Program.cs`:
+Register RelayHook and configure a destination:
 
 ```csharp
 builder.Services
@@ -48,69 +70,43 @@ builder.Services
 builder.Services.AddRelayHookHealthCheck();
 ```
 
-Inject `ICallbackClient` and enqueue work:
+Then inject `ICallbackClient` wherever you need to send a callback:
 
 ```csharp
 using RelayHook.Core.Abstractions;
 
 public sealed class PaymentService(ICallbackClient callbacks)
 {
-    public Task<Guid> NotifyAsync(Guid paymentId, CancellationToken cancellationToken) =>
-        callbacks.EnqueueAsync(
+    public Task<Guid> NotifyAsync(
+        Guid paymentId,
+        CancellationToken cancellationToken)
+    {
+        return callbacks.EnqueueAsync(
             "PartnerA",
             "payment.completed",
-            new { PaymentId = paymentId, Status = "Completed" },
+            new
+            {
+                PaymentId = paymentId,
+                Status = "Completed"
+            },
             cancellationToken);
+    }
 }
 ```
 
-`EnqueueAsync` serializes and persists work. It does not wait for the remote endpoint to receive the callback.
+`EnqueueAsync` persists the callback and returns. Delivery happens in the background.
 
-## Configure SQL Server
+RelayHook creates and maintains its own `[Callback]` schema in the configured database. It does not add entities to your application's `DbContext` or migrations.
 
-`UseSqlServer(connectionString)` stores jobs in the configured database. RelayHook never stores the connection string in callback data.
+## Idempotency
 
-The hosted worker creates and upgrades schema `[Callback]` during startup. Concurrent application instances serialize migration work with `sp_getapplock`. Startup fails when the database schema is newer than the installed package. Automatic schema initialization cannot currently be disabled.
+RelayHook provides **at-least-once delivery**.
 
-First deployment needs permission to create schema objects, tables, constraints, and indexes. Normal operation needs read/write access to `[Callback]`; future package upgrades may need DDL permission again. See [database documentation](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/database.md).
+In some failure scenarios a remote endpoint can receive the same callback more than once. This can happen, for example, when the receiver accepts a request but the application stops before RelayHook records the successful delivery.
 
-## Configure callback clients
-
-Client and endpoint names are case-insensitive, non-empty, and limited to 200 characters. Duplicate names fail during registration. A client must contain at least one endpoint. When a client has multiple endpoints, select one with `CallbackEnqueueOptions.Endpoint`.
-
-Endpoint configuration is snapshotted with each job, so queued callbacks retain their original non-secret delivery settings. Secret values are never snapshotted.
-
-## Authentication
-
-Built-in endpoint authentication supports API key, Basic, static Bearer, generated HS256 JWT, and OAuth2 client credentials. All secret-bearing options use configuration references, not literal secrets:
+For operations where duplicates matter, provide an idempotency key:
 
 ```csharp
-endpoint.UseApiKey(authentication =>
-{
-    authentication.HeaderName = "X-API-Key";
-    authentication.SecretReference = "Callbacks:PartnerA:ApiKey";
-});
-```
-
-The default `ICallbackSecretProvider` reads `IConfiguration`. For local development, `Callbacks:PartnerA:ApiKey` can be supplied as environment variable `Callbacks__PartnerA__ApiKey`. Use Kubernetes secrets, Azure Key Vault, HashiCorp Vault, CyberArk, or a custom provider in production. Never commit production secrets to `appsettings.json`.
-
-OAuth tokens are cached until their pre-expiry refresh window. One controlled token refresh and resend is allowed after a 401. Generated JWT support is HS256 only and requires a signing secret of at least 32 UTF-8 bytes.
-
-See [authentication documentation](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/authentication.md) for Basic, Bearer, JWT, OAuth2, and custom authenticator examples.
-
-## Retry behavior
-
-Default retry delays after the initial attempt are 1 minute, 5 minutes, 15 minutes, and 1 hour, with 10% jitter. Network failures, timeouts, HTTP 408, 425, 429, and 5xx responses retry. Other HTTP responses fail permanently. A valid `Retry-After` can extend, but not shorten, local backoff and is capped at 24 hours by default.
-
-`MaxAttempts` defaults to 5. Exhausted or permanent failures remain in `Failed` state. Replace `IRetryPolicy` for domain-specific classification.
-
-## Delivery guarantee and idempotency
-
-Every retry keeps stable `X-Callback-Id` and `X-Idempotency-Key` headers. Persist one of these values at the receiver and return success for duplicates. Supply a business key when useful:
-
-```csharp
-using RelayHook.Core;
-
 await callbacks.EnqueueAsync(
     "PartnerA",
     "payment.completed",
@@ -123,43 +119,64 @@ await callbacks.EnqueueAsync(
     cancellationToken);
 ```
 
-See [reliability documentation](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/reliability.md) for crash behavior and retry accounting.
+The callback ID and idempotency key remain stable across retries.
 
-## Configuration reference
+Receivers should use one of these values to detect duplicate deliveries.
 
-Runtime options are configured in code through `AddRelayHook`; direct `IConfiguration` binding is not currently provided.
+## Authentication
 
-| Option | Default | Constraint | Purpose |
-|---|---:|---|---|
-| `PollingInterval` | 5 seconds | Greater than zero | Delay after an empty poll |
-| `WorkerFailureBackoff` | 5 seconds | Greater than zero | Delay after infrastructure failure |
-| `BatchSize` | 50 | Greater than zero | Maximum jobs considered per poll |
-| `MaxConcurrentCallbacks` | 10 | Greater than zero | Parallel deliveries per process |
-| `LeaseDuration` | 2 minutes | Greater than zero | Recoverable ownership period |
-| `MaxAttempts` | 5 | Greater than zero | Default delivery attempt limit |
-| `MaxPayloadBytes` | 1,048,576 | Greater than zero | Maximum serialized UTF-8 payload |
-| `MaxPersistedResponseBytes` | 16,384 | Zero or greater | Maximum stored response bytes |
-| `MaxPersistedErrorCharacters` | 2,048 | Greater than zero | Maximum stored sanitized error text |
-| `Retry.JitterFactor` | 0.1 | 0 through 1 | Proportional retry jitter |
-| `Retry.MaximumRetryAfter` | 24 hours | Greater than zero | `Retry-After` cap |
-| `Retention.CompletedRetention` | 30 days | Greater than zero when enabled | Completed-job retention |
-| `Retention.FailedRetention` | `null` | `null` or greater than zero | Failed-job retention; `null` keeps forever |
-| `Retention.CleanupInterval` | 1 hour | Greater than zero when enabled | Cleanup cadence |
-| `Retention.BatchSize` | 500 | Greater than zero when enabled | Rows deleted per cleanup pass |
-| `UrlSecurity.AllowHttp` | `false` | Boolean | Explicit clear-text HTTP opt-in |
-| `UrlSecurity.AllowedHosts` | Empty | Non-null set | Optional case-insensitive host allowlist |
+RelayHook supports:
 
-See the [complete configuration reference](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/configuration.md), including endpoint and enqueue options.
+- No authentication
+- API Key
+- Basic authentication
+- Static Bearer tokens
+- Generated HS256 JWT
+- OAuth2 Client Credentials
+- Custom authenticators
 
-## Database and schema
+Secrets are referenced by configuration key rather than stored with callback jobs.
 
-RelayHook owns `[Callback]` tables for clients, endpoints, jobs, attempts, and schema version. It uses direct `Microsoft.Data.SqlClient` access; it does not modify the host `DbContext` or host migrations. SQL Server UTC is authoritative for lease timing.
+For example:
 
-See [database documentation](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/database.md).
+```csharp
+endpoint.UseApiKey(authentication =>
+{
+    authentication.HeaderName = "X-API-Key";
+    authentication.SecretReference = "Callbacks:PartnerA:ApiKey";
+});
+```
+
+The default secret provider reads from `IConfiguration`, so the actual value can come from environment variables or any configuration provider used by your application.
+
+For production environments, secrets can be supplied through systems such as Azure Key Vault, HashiCorp Vault, CyberArk or Kubernetes Secrets.
+
+See the [authentication documentation](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/authentication.md) for the available authentication methods.
+
+## Retries
+
+By default, RelayHook retries transient failures after approximately:
+
+```text
+1 minute
+5 minutes
+15 minutes
+1 hour
+```
+
+with jitter applied to the delay.
+
+Retries are performed for network failures, timeouts, HTTP `408`, `425`, `429` and `5xx` responses.
+
+`Retry-After` is respected when supplied by the remote server.
+
+The default maximum number of delivery attempts is **5**.
+
+See [reliability](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/reliability.md) for more details.
 
 ## Transactional enqueue
 
-When business data and RelayHook share the same SQL Server database, use `ICallbackTransactionalClient` with an existing open `SqlConnection` and `SqlTransaction`:
+If your business data and RelayHook use the same SQL Server database, a callback can be inserted using an existing SQL transaction:
 
 ```csharp
 var callbackId = await transactionalCallbacks.EnqueueAsync(
@@ -171,61 +188,57 @@ var callbackId = await transactionalCallbacks.EnqueueAsync(
     cancellationToken: cancellationToken);
 ```
 
-RelayHook verifies schema compatibility but does not open, commit, or roll back the caller-owned transaction. Start a RelayHook host first so schema initialization completes.
+This allows the business operation and callback enqueue to commit or roll back together.
+
+RelayHook does not commit or roll back the transaction supplied by the application.
+
+## Running multiple instances
+
+Multiple instances of the same application can safely use the same RelayHook database.
+
+Jobs are claimed atomically and protected by renewable leases. If an instance stops while processing a callback, the job can be recovered by another instance after its lease expires.
+
+This makes RelayHook suitable for applications running multiple replicas or Kubernetes pods without requiring a separate coordinator.
 
 ## Observability
 
-RelayHook provides:
+RelayHook integrates with standard .NET observability APIs and provides:
 
-- structured `ILogger` events without payloads or resolved secrets;
-- `ActivitySource` name `RelayHook` with `callback.process` and `callback.http.send` activities;
-- `System.Diagnostics.Metrics` meter name `RelayHook`;
-- health check name `relayhook` after `AddRelayHookHealthCheck()`.
+- structured `ILogger` events
+- `System.Diagnostics.ActivitySource` tracing
+- `System.Diagnostics.Metrics`
+- ASP.NET Core health checks
 
-OpenTelemetry is optional. Subscribe to standard .NET activities and metrics when desired.
+Register the health check with:
+
+```csharp
+builder.Services.AddRelayHookHealthCheck();
+```
+
+The registered health check is named `relayhook`.
 
 ## Security
 
-HTTPS is required by default. Redirects are disabled. Literal private, loopback, and link-local addresses are blocked unless explicitly allowlisted. DNS rebinding requires environment-specific egress controls or a custom `ICallbackUrlPolicy`. Payloads and persisted responses are bounded. RelayHook does not log or persist resolved authentication secrets.
+RelayHook requires HTTPS destinations by default.
 
-See [security guidance](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/security.md).
+Redirects are disabled, and private, loopback and link-local literal addresses are blocked unless explicitly allowed.
 
-## Multi-instance deployment
+Resolved authentication secrets are not stored with callback jobs and are not written to RelayHook logs.
 
-Multiple pods can share one database. Atomic SQL claims prevent concurrent ownership, renewable leases recover crashed work, and schema upgrades serialize across pods. Receivers still need idempotency because no database lease can recall an HTTP request already accepted remotely.
+For production deployment guidance, see [security](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/security.md).
 
-## Troubleshooting
+## Documentation
 
-- Startup says storage is missing: call `UseSqlServer` after `AddRelayHook`.
-- Schema initialization fails: verify connection, DDL permissions, and migration-lock access.
-- Schema is newer than package: deploy a compatible/newer RelayHook version; downgrades are blocked.
-- Callback remains pending: inspect `NextAttemptAt`, worker logs, database connectivity, and host process health.
-- Callback retries repeatedly: inspect HTTP status, timeout, destination logs, and `Retry-After`.
-- OAuth token request fails: verify HTTPS token endpoint, client ID, secret reference, scopes, and system clock.
-- Destination returns 401/403: verify secret provider output and destination authorization policy.
-- URL is blocked: review HTTPS, `AllowedHosts`, private-address policy, and custom URL policy.
+More detailed documentation is available in the repository:
 
-See [full troubleshooting guidance](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/troubleshooting.md).
-
-## Advanced customization
-
-Public extension points include `ICallbackAuthenticator`, `ICallbackSecretProvider`, `ICallbackSerializer`, `ICallbackUrlPolicy`, and `IRetryPolicy`. Register replacements in DI before `AddRelayHook` when RelayHook uses `TryAdd`, or use standard DI replacement methods.
-
-Architecture details: [architecture](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/architecture.md).
-
-## Development and packaging
-
-```bash
-dotnet restore RelayHook.slnx
-dotnet restore samples/RelayHook.Sample/RelayHook.Sample.csproj
-dotnet build RelayHook.slnx -c Release --no-restore
-dotnet build samples/RelayHook.Sample/RelayHook.Sample.csproj -c Release --no-restore
-dotnet test RelayHook.slnx -c Release --no-build --no-restore
-dotnet pack RelayHook.slnx -c Release --no-build --no-restore -p:Version=0.1.0-alpha.1
-```
-
-Packages and symbols are written to `artifacts/packages/`. See [packaging and release guidance](https://github.com/iuliann20/relay-hook/blob/main/RelayHook/docs/packaging.md).
+- [Configuration](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/configuration.md)
+- [Authentication](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/authentication.md)
+- [Database](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/database.md)
+- [Reliability](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/reliability.md)
+- [Security](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/security.md)
+- [Troubleshooting](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/troubleshooting.md)
+- [Architecture](https://github.com/iuliansilitra/relay-hook/blob/main/RelayHook/docs/architecture.md)
 
 ## License
 
-RelayHook is licensed under the [MIT License](https://github.com/iuliann20/relay-hook/blob/main/LICENSE).
+RelayHook is available under the [MIT License](https://github.com/iuliansilitra/relay-hook/blob/main/LICENSE).

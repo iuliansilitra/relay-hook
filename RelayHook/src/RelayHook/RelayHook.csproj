@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<PackageId>RelayHook</PackageId>
+		<Description>
+			Reliable outbound webhook and callback delivery for ASP.NET Core applications using SQL Server.
+		</Description>
+		<IsPackable>true</IsPackable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\RelayHook.AspNetCore\RelayHook.AspNetCore.csproj" />
+		<ProjectReference Include="..\RelayHook.SqlServer\RelayHook.SqlServer.csproj" />
+	</ItemGroup>
+
+</Project>
