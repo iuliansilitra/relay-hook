@@ -1,33 +1,44 @@
 <Project>
   <PropertyGroup>
+    <!-- Build -->
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
-    <Version>0.1.0-alpha.1</Version>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <RepositoryUrl>https://github.com/iuliann20/relay-hook</RepositoryUrl>
+
+    <!-- Version -->
+    <Version>0.1.0-alpha.1</Version>
+
+    <!-- Repository / SourceLink -->
+    <RepositoryUrl>https://github.com/iuliansilitra/relay-hook</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageProjectUrl>https://github.com/iuliann20/relay-hook</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/iuliansilitra/relay-hook</PackageProjectUrl>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <DebugType>portable</DebugType>
-    <Authors>iuliann20</Authors>
-    <Copyright>Copyright © 2026 iuliann20</Copyright>
-    <PackageTags>webhook;webhooks;callback;callbacks;reliable;delivery;outbound</PackageTags>
+
+    <!-- NuGet metadata -->
+    <Authors>iuliansilitra</Authors>
+    <Copyright>Copyright © 2026 iuliansilitra</Copyright>
+    <PackageTags>webhook;webhooks;callback;callbacks;reliable;delivery;outbound;sqlserver;aspnetcore;retry</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReleaseNotes>See https://github.com/iuliann20/relay-hook/releases</PackageReleaseNotes>
+    <PackageReleaseNotes>See https://github.com/iuliansilitra/relay-hook/releases</PackageReleaseNotes>
+
+    <!-- NuGet output -->
     <PackageOutputPath>$(MSBuildThisFileDirectory)artifacts/packages</PackageOutputPath>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
   <ItemGroup Condition="'$(IsPackable)' != 'false'">
-    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)README.md"
+          Pack="true"
+          PackagePath="\" />
   </ItemGroup>
 </Project>
