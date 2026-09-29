@@ -1,0 +1,64 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-pack:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: RelayHook
+    env:
+      RELAYHOOK_SQL_PASSWORD: RelayHook-${{ github.run_id }}-Ci!
+      RELAYHOOK_SQLSERVER: Server=localhost,1433;Database=RelayHookTests;User Id=sa;Password=RelayHook-${{ github.run_id }}-Ci!;Encrypt=True;TrustServerCertificate=True
+      PACKAGE_VERSION: 0.1.0-ci.${{ github.run_number }}
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: RelayHook-${{ github.run_id }}-Ci!
+        ports:
+          - 1433:1433
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Wait for SQL Server and create test database
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if docker exec "${{ job.services.sqlserver.id }}" /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$RELAYHOOK_SQL_PASSWORD" -Q "SELECT 1"; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "SQL Server did not become ready."
+              exit 1
+            fi
+            sleep 2
+          done
+          docker exec "${{ job.services.sqlserver.id }}" /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$RELAYHOOK_SQL_PASSWORD" -Q "CREATE DATABASE [RelayHookTests]"
+
+      - run: dotnet restore RelayHook.slnx
+      - run: dotnet restore samples/RelayHook.Sample/RelayHook.Sample.csproj
+      - run: dotnet list RelayHook.slnx package --vulnerable --include-transitive --no-restore
+      - run: dotnet build RelayHook.slnx -c Release --no-restore -p:Version="$PACKAGE_VERSION"
+      - run: dotnet build samples/RelayHook.Sample/RelayHook.Sample.csproj -c Release --no-restore -p:Version="$PACKAGE_VERSION"
+      - run: dotnet test RelayHook.slnx -c Release --no-build --no-restore -p:Version="$PACKAGE_VERSION"
+      - run: dotnet pack RelayHook.slnx -c Release --no-build --no-restore -p:Version="$PACKAGE_VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relayhook-packages-${{ github.run_number }}
+          path: RelayHook/artifacts/packages/*.*nupkg
+          if-no-files-found: error

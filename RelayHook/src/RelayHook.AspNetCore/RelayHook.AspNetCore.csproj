@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>RelayHook.AspNetCore</PackageId>
+    <Title>RelayHook for ASP.NET Core</Title>
+    <Description>Recommended RelayHook package for ASP.NET Core: durable SQL Server callbacks, hosted delivery, built-in authentication, health checks, and dependency injection.</Description>
+    <PackageTags>$(PackageTags);aspnetcore;sqlserver;dependency-injection</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../RelayHook.Core/RelayHook.Core.csproj" />
+    <ProjectReference Include="../RelayHook.Authentication/RelayHook.Authentication.csproj" />
+    <ProjectReference Include="../RelayHook.SqlServer/RelayHook.SqlServer.csproj" />
+    <InternalsVisibleTo Include="RelayHook.AspNetCore.Tests" />
+    <InternalsVisibleTo Include="RelayHook.IntegrationTests" />
+  </ItemGroup>
+</Project>

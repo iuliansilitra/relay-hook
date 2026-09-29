@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "RelayHook.Sample": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:60579;http://localhost:60580"
+    }
+  }
+}

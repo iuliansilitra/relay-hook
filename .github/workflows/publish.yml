@@ -1,0 +1,85 @@
+name: publish-nuget
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  test-pack-publish:
+    runs-on: ubuntu-latest
+    environment: nuget
+    defaults:
+      run:
+        working-directory: RelayHook
+    env:
+      RELAYHOOK_SQL_PASSWORD: RelayHook-${{ github.run_id }}-Release!
+      RELAYHOOK_SQLSERVER: Server=localhost,1433;Database=RelayHookTests;User Id=sa;Password=RelayHook-${{ github.run_id }}-Release!;Encrypt=True;TrustServerCertificate=True
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: RelayHook-${{ github.run_id }}-Release!
+        ports:
+          - 1433:1433
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate release tag
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "Tag must be vMAJOR.MINOR.PATCH or a valid SemVer prerelease."
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SQL Server and create test database
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if docker exec "${{ job.services.sqlserver.id }}" /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$RELAYHOOK_SQL_PASSWORD" -Q "SELECT 1"; then
+              break
+            fi
+            if [ "$attempt" = 30 ]; then
+              echo "SQL Server did not become ready."
+              exit 1
+            fi
+            sleep 2
+          done
+          docker exec "${{ job.services.sqlserver.id }}" /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$RELAYHOOK_SQL_PASSWORD" -Q "CREATE DATABASE [RelayHookTests]"
+
+      - run: dotnet restore RelayHook.slnx
+      - run: dotnet restore samples/RelayHook.Sample/RelayHook.Sample.csproj
+      - run: dotnet test RelayHook.slnx -c Release --no-restore -p:Version="${{ steps.version.outputs.value }}"
+      - run: dotnet build samples/RelayHook.Sample/RelayHook.Sample.csproj -c Release --no-restore -p:Version="${{ steps.version.outputs.value }}"
+      - run: dotnet pack RelayHook.slnx -c Release --no-build --no-restore -p:Version="${{ steps.version.outputs.value }}"
+
+      - name: Require NuGet API key
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "NUGET_API_KEY is required."
+            exit 1
+          fi
+
+      - name: Publish packages and symbols
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push "artifacts/packages/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          dotnet nuget push "artifacts/packages/*.snupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate

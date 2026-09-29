@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>RelayHook.Core</PackageId>
+    <Title>RelayHook Core</Title>
+    <Description>Core public contracts, callback options, serialization abstractions, and retry extension points for RelayHook.</Description>
+    <PackageTags>$(PackageTags);core;retry</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="RelayHook.Authentication" />
+    <InternalsVisibleTo Include="RelayHook.SqlServer" />
+    <InternalsVisibleTo Include="RelayHook.AspNetCore" />
+    <InternalsVisibleTo Include="RelayHook.Core.Tests" />
+    <InternalsVisibleTo Include="RelayHook.Authentication.Tests" />
+    <InternalsVisibleTo Include="RelayHook.AspNetCore.Tests" />
+    <InternalsVisibleTo Include="RelayHook.SqlServer.Tests" />
+    <InternalsVisibleTo Include="RelayHook.IntegrationTests" />
+  </ItemGroup>
+</Project>

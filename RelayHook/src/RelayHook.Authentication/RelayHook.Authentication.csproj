@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>RelayHook.Authentication</PackageId>
+    <Title>RelayHook Authentication</Title>
+    <Description>Built-in API key, Basic, Bearer, generated HS256 JWT, and OAuth2 client-credentials authentication for RelayHook.</Description>
+    <PackageTags>$(PackageTags);authentication;oauth2;jwt</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
+    <ProjectReference Include="../RelayHook.Core/RelayHook.Core.csproj" />
+    <InternalsVisibleTo Include="RelayHook.AspNetCore" />
+    <InternalsVisibleTo Include="RelayHook.Authentication.Tests" />
+    <InternalsVisibleTo Include="RelayHook.AspNetCore.Tests" />
+    <InternalsVisibleTo Include="RelayHook.IntegrationTests" />
+  </ItemGroup>
+</Project>
